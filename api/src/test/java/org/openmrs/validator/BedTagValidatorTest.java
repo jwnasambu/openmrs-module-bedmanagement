@@ -9,132 +9,140 @@
  */
 package org.openmrs.validator;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.openmrs.api.context.Context;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.openmrs.api.ValidationException;
 import org.openmrs.module.bedmanagement.entity.BedTag;
 import org.openmrs.module.bedmanagement.service.BedManagementService;
+import org.openmrs.test.jupiter.BaseModuleContextSensitiveTest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.BindException;
 import org.springframework.validation.Errors;
+import org.springframework.validation.Validator;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+public class BedTagValidatorTest extends BaseModuleContextSensitiveTest {
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Date;
+	@Autowired
+	private Validator bedTagValidator;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.*;
-
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
-
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Context.class)
-public class BedTagValidatorTest {
-	
-	private BedTagValidator validator;
+	@Autowired
 	private BedManagementService bedManagementService;
-	
-	private BedTag activeTag;
-	private BedTag expiredTag;
-	
-	@Before
-	public void setup() {
-		validator = new BedTagValidator();
-		bedManagementService = mock(BedManagementService.class);
-		
-		// Mock static Context.getService()
-		PowerMockito.mockStatic(Context.class);
-		when(Context.getService(BedManagementService.class)).thenReturn(bedManagementService);
-		
-		activeTag = new BedTag();
-		activeTag.setName("ICU-1");
-		activeTag.setUuid("active-uuid");
-		
-		expiredTag = new BedTag();
-		expiredTag.setName("ExpiredTag");
-		expiredTag.setUuid("expired-uuid");
-		expiredTag.setDateVoided(new Date());
+
+	@BeforeEach
+	public void setUp() throws Exception {
+		List<BedTag> allTags = bedManagementService.getAllBedTags();
+		for (BedTag tag : allTags) {
+			bedManagementService.deleteBedTag(tag, null);
+		}
 	}
-	
+
 	@Test
-	public void validate_shouldFailIfNameIsNullOrEmptyOrWhitespace() {
+	public void validate_shouldFailValidationIfNameIsNullOrEmptyOrWhitespace() {
 		BedTag tag = new BedTag();
-		
+		Errors errors;
+
 		tag.setName(null);
-		Errors errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
+		errors = new BindException(tag, "tag");
+		bedTagValidator.validate(tag, errors);
 		assertTrue(errors.hasFieldErrors("name"));
-		
+
 		tag.setName("");
 		errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
+		bedTagValidator.validate(tag, errors);
 		assertTrue(errors.hasFieldErrors("name"));
-		
-		tag.setName(" ");
+
+		tag.setName("   ");
 		errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
+		bedTagValidator.validate(tag, errors);
 		assertTrue(errors.hasFieldErrors("name"));
 	}
-	
+
 	@Test
-	public void validate_shouldFailIfNonExpiredNameAlreadyInUse() {
-		when(bedManagementService.getAllBedTags()).thenReturn(Arrays.asList(activeTag));
-		
-		BedTag tag = new BedTag();
-		tag.setName("ICU-1");
-		
-		Errors errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
-		
+	public void validate_shouldFailValidationIfBedTagNameAlreadyInUse() {
+		BedTag existing = new BedTag();
+		existing.setName("VIP");
+		bedManagementService.saveBedTag(existing);
+
+		BedTag duplicate = new BedTag();
+		duplicate.setName("VIP");
+
+		Errors errors = new BindException(duplicate, "tag");
+		bedTagValidator.validate(duplicate, errors);
 		assertTrue(errors.hasFieldErrors("name"));
 	}
-	
+
 	@Test
-	public void validate_shouldPassIfExistingNameIsExpired() {
-		when(bedManagementService.getAllBedTags()).thenReturn(Arrays.asList(expiredTag));
-		
-		BedTag tag = new BedTag();
-		tag.setName("ExpiredTag");
-		
-		Errors errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
-		
+	public void validate_shouldPassValidationIfExistingTagWithSameNameIsVoided() {
+		BedTag existing = new BedTag();
+		existing.setName("Emergency");
+		existing.setVoided(true);
+		bedManagementService.saveBedTag(existing);
+
+		BedTag newTag = new BedTag();
+		newTag.setName("Emergency");
+
+		Errors errors = new BindException(newTag, "tag");
+		bedTagValidator.validate(newTag, errors);
 		assertFalse(errors.hasFieldErrors("name"));
 	}
-	
+
 	@Test
-	public void validate_shouldPassIfAllRequiredFieldsAreValid() {
-		when(bedManagementService.getAllBedTags()).thenReturn(Collections.emptyList());
-		
-		BedTag tag = new BedTag();
-		tag.setName("NewTag");
-		
-		Errors errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
-		
-		assertFalse(errors.hasErrors());
-	}
-	
-	@Test
-	public void validate_shouldFailIfFieldLengthsAreInvalid() {
-		BedTag tag = new BedTag();
-		tag.setName("ThisNameIsWayTooLongForABedTagAndShouldFailValidationAccordingToFieldLengthRules");
-		
-		Errors errors = new BindException(tag, "tag");
-		validator.validate(tag, errors);
-		
+	public void validate_shouldFailValidationIfDuplicateNameCaseInsensitive() {
+		BedTag existing = new BedTag();
+		existing.setName("ICU");
+		bedManagementService.saveBedTag(existing);
+
+		BedTag duplicate = new BedTag();
+		duplicate.setName("icu");
+
+		Errors errors = new BindException(duplicate, "tag");
+		bedTagValidator.validate(duplicate, errors);
 		assertTrue(errors.hasFieldErrors("name"));
 	}
-	
+
 	@Test
-	public void validate_shouldRejectNonBedTagObjects() {
-		Object notABedTag = new Object();
-		Errors errors = new BindException(notABedTag, "notABedTag");
-		validator.validate(notABedTag, errors);
-		
-		assertTrue(errors.hasGlobalErrors());
+	public void validate_shouldPassValidationIfAllRequiredFieldsHaveProperValues() {
+		BedTag tag = new BedTag();
+		tag.setName("Isolation");
+
+		Errors errors = new BindException(tag, "tag");
+		bedTagValidator.validate(tag, errors);
+		assertFalse(errors.hasErrors());
+
+		bedManagementService.saveBedTag(tag);
+		List<BedTag> tags = bedManagementService.getAllBedTags();
+		assertTrue(tags.stream().anyMatch(t -> "Isolation".equals(t.getName())));
+	}
+
+	@Test
+	public void validate_shouldFailValidationIfFieldLengthIsTooLong() {
+		BedTag tag = new BedTag();
+		tag.setName("This name is far too long for a bed tag and should definitely fail validation");
+
+		Errors errors = new BindException(tag, "tag");
+		bedTagValidator.validate(tag, errors);
+		assertTrue(errors.hasFieldErrors("name"));
+	}
+
+	@Test
+	public void validate_shouldPassValidationIfFieldLengthIsWithinLimit() {
+		BedTag tag = new BedTag();
+		tag.setName("General Ward");
+
+		Errors errors = new BindException(tag, "tag");
+		bedTagValidator.validate(tag, errors);
+		assertFalse(errors.hasErrors());
+	}
+
+	@Test
+	public void saveBedTag_shouldNotSaveInvalidTag() {
+        assertThrows(ValidationException.class, () -> {
+            BedTag invalidTag = new BedTag();
+            invalidTag.setName("");
+            bedManagementService.saveBedTag(invalidTag);
+        });
 	}
 }
