@@ -146,6 +146,14 @@ public interface BedManagementDao {
 	 * @return {@link BedTag}
 	 */
 	BedTag getBedTagByUuid(String uuid);
+
+    /**
+     * Get bed tag by Uuid
+     *
+     * @param uuid {@link String} bed tag uuid
+     * @return {@link BedTag}
+     */
+    BedTag getBedTagByName(String Name);
 	
 	/**
 	 * Return bed tags

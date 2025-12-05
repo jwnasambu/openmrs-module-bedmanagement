@@ -70,4 +70,9 @@ public class BedTagMapServiceImpl extends BaseOpenmrsService implements BedTagMa
 	public BedTag getBedTagByUuid(String bedTagUuid) {
 		return bedTagMapDao.getBedTagByUuid(bedTagUuid);
 	}
+
+    @Transactional(readOnly = true)
+    public BedTag getBedTagByName(String bedTagName) {
+        return bedTagMapDao.getBedTagByName(bedTagName);
+    }
 }
